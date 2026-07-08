@@ -1,0 +1,894 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="light only" />
+  <!-- <title> MUST equal meta.json.title (ADR-026 / RULES.md §1.12). -->
+  <title>Orthographic Projection</title>
+  <meta name="description" content="Discover orthographic projection itself: watch a solid cast its shadow onto a single projection plane, compare parallel projectors against a perspective photo's converging rays, and see why the projectors must be perpendicular to give a true, measurable view." />
+
+  <!--
+    See ../CLAUDE.md. The guided-step wizard (7-step rail + card, driven by
+    src/stepper.js from src/orthoSteps.js), the 3D content (wedgeBlock.js,
+    projectionPlane.js, projectors.js, viewDrawing.js, observerRig.js), and the
+    CSS2D label layer (src/labelLayer.js) are all wired through src/main.js.
+    Platform contract: the import map, the boot watchdog, the bundled fonts,
+    and the root DESIGN.md token set (ADR-033, ADR-007 orchestrator pattern).
+
+    Three.js is loaded as CDN ES modules ONLY, pinned to 0.160.0 (RULES.md §2.2–§2.4).
+    No build step, no bundler, no npm. This import map is the exact platform contract.
+  -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <!--
+    Boot watchdog (classic script, runs before the ES module). The sim's only runtime
+    network dependency is the pinned Three.js CDN module; if it is blocked or the
+    module fails to evaluate, init() never runs and the iframe would sit blank. This
+    arms a calm, self-healing fallback. main.js clears it on a successful boot.
+  -->
+  <script>
+    (function () {
+      window.__simBooted = false;
+      var WEBGL_COPY = {
+        title: 'Your browser could not start the 3D view',
+        body: 'This simulation needs hardware-accelerated graphics (WebGL), which looks switched off or unavailable here. Turn on hardware acceleration in your browser settings, or open this in a recent Chrome, Edge, or Firefox, then reload.',
+      };
+      window.__showSimFallback = function (variant) {
+        if (window.__simBooted) return;
+        var el = document.getElementById('sim-fallback');
+        if (!el) return;
+        if (variant === 'webgl') {
+          var t = document.getElementById('sim-fallback-title');
+          var b = document.getElementById('sim-fallback-body');
+          if (t) t.textContent = WEBGL_COPY.title;
+          if (b) b.textContent = WEBGL_COPY.body;
+        }
+        el.hidden = false;
+      };
+      window.addEventListener('error', function () {
+        if (!window.__simBooted) window.__showSimFallback();
+      });
+      window.__simBootTimer = window.setTimeout(function () {
+        if (!window.__simBooted) window.__showSimFallback();
+      }, 15000);
+      document.addEventListener('DOMContentLoaded', function () {
+        var btn = document.getElementById('sim-fallback-reload');
+        if (btn) btn.addEventListener('click', function () { window.location.reload(); });
+      });
+    })();
+  </script>
+
+  <style>
+    /*
+      Bundled web fonts (DESIGN.md typography / RULES.md §2.15). Local subset woff2 in
+      ./assets/fonts/ — no runtime Google Fonts fetch, so the sim works offline after
+      the initial load. Atkinson Hyperlegible (UI/body), IBM Plex Mono (numbers).
+    */
+    @font-face {
+      font-family: "Atkinson Hyperlegible";
+      font-style: normal; font-weight: 400; font-display: swap;
+      src: url("./assets/fonts/atkinson-hyperlegible-latin-400-normal.woff2") format("woff2");
+    }
+    @font-face {
+      font-family: "Atkinson Hyperlegible";
+      font-style: normal; font-weight: 700; font-display: swap;
+      src: url("./assets/fonts/atkinson-hyperlegible-latin-700-normal.woff2") format("woff2");
+    }
+    @font-face {
+      font-family: "IBM Plex Mono";
+      font-style: normal; font-weight: 400; font-display: swap;
+      src: url("./assets/fonts/ibm-plex-mono-latin-400-normal.woff2") format("woff2");
+    }
+
+    /*
+      ============================================================
+      Design tokens — Simatrix platform token set (light, locked)
+      ============================================================
+      Single runtime source of truth for colour/space/motion. JS reads these via
+      getComputedStyle(...).getPropertyValue('--token') — never hard-codes hex
+      (RULES.md §4.1). Mirrors the root DESIGN.md token table exactly (§2.1).
+      This topic's own subject is a single, GENERIC projection plane (not HP/VP),
+      so it renders using --color-bench-grey (curriculum-owner decision,
+      2026-07-09) rather than the HP/VP/PP hues — those stay defined here (every
+      module carries the full shared token set, DESIGN.md §6.1) but are unused
+      in this topic's viewport, same as `--color-pp-line` is already
+      defined-but-unused elsewhere in the Module 1 family (DESIGN.md §7.2/§8).
+    */
+    :root {
+      /* --- Surfaces (warm paper, tonal layering not shadows) --- */
+      --color-paper:        #faf8f3;
+      --color-panel:        #efebe1;
+      --color-solid-fill:   #e7e1d4; /* solid faces, so ink edges read */
+      --color-host-white:   #ffffff; /* narrowly-scoped host-blend card exception */
+
+      /* --- Ink (warm near-black) --- */
+      --color-ink:          #221f18;
+      --color-ink-secondary:#564e3c;
+
+      /* --- Mid neutral --- */
+      --color-bench-grey:   #938b7b;
+      --color-border:       #d9d2c3;
+      --color-track:        #cfc8b8;
+
+      /* --- The one interaction accent (technical blue) — chrome only (§4.5) --- */
+      --color-accent:        #1f66b5;
+      --color-accent-strong: #17539b;
+      --color-accent-soft:   #e3ecf7;
+      --color-focus:         var(--color-accent);
+      --ring-focus:          0 0 0 3px color-mix(in srgb, var(--color-accent) 26%, transparent);
+      --shadow-md:           0 4px 16px color-mix(in srgb, var(--color-ink) 12%, transparent);
+
+      /* --- Status (UI only, always paired with an icon — §4.6) --- */
+      --color-success:       #2e7d52;
+      --color-success-soft:  #e2efe8;
+
+      /* --- Functional projection-plane encodings — carried for token-set parity
+             (DESIGN.md §6.1); unused in this topic's single generic plane. --- */
+      --color-hp-line: #007f7c;
+      --color-vp-line: #bc5d1e;
+      --color-pp-line: #7a5ea6;
+
+      /* --- Spacing scale (4px base) --- */
+      --space-1: 4px;  --space-2: 8px;  --space-3: 12px;
+      --space-4: 16px; --space-5: 24px; --space-6: 32px;
+
+      /* --- Radius --- */
+      --radius-xs: 4px; --radius-sm: 6px; --radius-md: 10px;
+
+      /* --- Type --- */
+      --font-sans: "Atkinson Hyperlegible", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", Consolas, "Liberation Mono", monospace;
+      --text-xs: 0.75rem; --text-sm: 0.875rem; --text-base: 1rem;
+      --text-lead: 1.125rem; --text-title: 1.35rem;
+
+      /* --- Motion (subtle ease-out — DESIGN.md) --- */
+      --dur-fast: 150ms; --dur-base: 200ms; --dur-step: 380ms;
+      --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+
+      /* --- Layering (rungs from the platform z-ladder, DESIGN.md §4.3) --- */
+      --z-term: 60;
+      --z-notice: 100;
+    }
+
+    /* ============================================================
+       Normalize / base
+       ============================================================ */
+    *, *::before, *::after { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: var(--font-sans);
+      font-size: var(--text-base);
+      color: var(--color-ink);
+      background: var(--color-paper);
+      overflow: hidden;
+      font-variant-numeric: tabular-nums;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
+      display: flex;
+      flex-direction: row;
+      position: relative;
+    }
+    button { font: inherit; color: inherit; }
+
+    .sr-only {
+      position: absolute; width: 1px; height: 1px;
+      padding: 0; margin: -1px; overflow: hidden;
+      clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+    }
+
+    /* ============================================================
+       Viewport — WebGL canvas mounts here (main.js)
+       ============================================================ */
+    #sim-viewport {
+      position: relative;
+      flex: 1 1 0;
+      min-width: 0;
+      height: 100%;
+      background: var(--color-paper);
+      order: 1; /* viewport on the LEFT, wizard on the right */
+    }
+    #sim-viewport canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      touch-action: none; /* drag-to-orbit, no scroll/zoom hijack */
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    .vp-hint {
+      position: absolute;
+      bottom: var(--space-4);
+      left: var(--space-4);
+      padding: var(--space-2) var(--space-4);
+      border-radius: var(--radius-sm);
+      background: color-mix(in srgb, var(--color-paper) 88%, transparent);
+      border: 1px solid var(--color-border);
+      color: var(--color-ink-secondary);
+      font-size: var(--text-sm);
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    /* CSS2D viewport labels (src/labelLayer.js) — live DOM nodes (CSS2DObject) the
+       renderer re-projects every frame, so they stay vector-sharp at any zoom
+       (RULES.md §3.27). Colours ride the same tokens as the geometry they name;
+       chips take the boxed "engineering software" look. Never intercept pointer
+       events, so drag-to-orbit passes through. */
+    .lbl {
+      line-height: 1;
+      white-space: nowrap;
+      user-select: none;
+      pointer-events: none;
+      font-family: var(--font-sans);
+      font-weight: 700;
+      font-size: var(--text-sm);
+    }
+    .lbl--chip {
+      background: color-mix(in srgb, var(--color-paper) 88%, transparent);
+      border: 1px solid currentColor;
+      border-radius: var(--radius-xs);
+      padding: 2px 5px;
+      font-size: var(--text-xs);
+    }
+    .lbl--ink { color: var(--color-ink); }
+    .lbl--plane { color: var(--color-bench-grey); }
+    .lbl--angle { color: var(--color-ink-secondary); font-family: var(--font-mono); }
+    .lbl--view { color: var(--color-ink); }
+
+    /* ============================================================
+       Wizard dock (right) — guided-step rail + card. stepper.js owns
+       this chrome (renders copy from orthoSteps.js, gates Next); the
+       parameter controls (tilt / rotation) live in uiManager.js.
+       ============================================================ */
+    #wizard {
+      order: 2;
+      flex: 0 0 auto;
+      width: clamp(340px, 34vw, 460px);
+      height: 100%;
+      background: var(--color-panel);
+      border-left: 1px solid var(--color-border);
+      display: flex;
+      flex-direction: column;
+      padding: var(--space-5) var(--space-4);
+      overflow: hidden;
+    }
+    .wizard-main {
+      flex: 1 1 auto;
+      min-height: 0;
+      display: flex;
+      flex-direction: row;
+      gap: var(--space-4);
+    }
+    #step-card {
+      flex: 1 1 auto;
+      min-width: 0;
+      order: 1;
+      display: flex;
+      flex-direction: column;
+      background: var(--color-paper);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      padding: var(--space-5) var(--space-4);
+      overflow-y: auto;
+    }
+    /* Floating padded scrollbar pill — platform standard (DESIGN.md §5.11, ADR-032). */
+    #step-card::-webkit-scrollbar { width: 10px; }
+    #step-card::-webkit-scrollbar-track { background: transparent; }
+    #step-card::-webkit-scrollbar-thumb {
+      background: var(--color-border);
+      background-clip: padding-box;
+      border: 3px solid transparent;
+      border-radius: 999px;
+    }
+    @supports (-moz-appearance: none) {
+      #step-card {
+        scrollbar-width: thin;
+        scrollbar-color: var(--color-border) transparent;
+      }
+    }
+    .card__eyebrow {
+      margin: 0 0 var(--space-1);
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--color-ink-secondary);
+    }
+    .card__title {
+      margin: 0 0 var(--space-2);
+      font-size: var(--text-title);
+      line-height: 1.2;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    .card__lead {
+      margin: 0;
+      max-width: 60ch;
+      font-size: var(--text-sm);
+      line-height: 1.55;
+      color: var(--color-ink-secondary);
+    }
+    .card__body {
+      margin-top: var(--space-3);
+      font-size: var(--text-sm);
+      line-height: 1.55;
+    }
+    .card__body p { margin: 0 0 var(--space-3); max-width: 60ch; }
+    .card__body b { font-weight: 700; }
+    .term {
+      padding: 0;
+      border: 0;
+      background: none;
+      cursor: help;
+      color: var(--color-accent-strong);
+      border-bottom: 1px dotted var(--color-accent-strong);
+      font-size: inherit;
+      line-height: inherit;
+    }
+
+    #term-pop {
+      position: fixed;
+      z-index: var(--z-term);
+      max-width: 32ch;
+      padding: var(--space-3);
+      font-size: var(--text-sm);
+      line-height: 1.45;
+      color: var(--color-ink);
+      background: var(--color-accent-soft);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-sm);
+      box-shadow: var(--shadow-md);
+      pointer-events: none;
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(4px) scale(0.96);
+      transform-origin: top left;
+      transition: opacity var(--dur-fast) var(--ease-standard),
+                  transform var(--dur-fast) var(--ease-standard),
+                  visibility 0s linear var(--dur-fast);
+    }
+    #term-pop.is-open { opacity: 1; visibility: visible; transform: none; transition-delay: 0s; }
+    #term-pop .term-pop__title { display: block; font-weight: 700; margin-bottom: 2px; }
+    .card__hint {
+      margin: var(--space-2) 0 0;
+      padding: var(--space-3) var(--space-4);
+      background: var(--color-accent-soft);
+      border: 1px solid color-mix(in srgb, var(--color-accent) 25%, var(--color-border));
+      border-radius: var(--radius-sm);
+      font-size: var(--text-sm);
+      line-height: 1.5;
+    }
+
+    /* --- Step rail: vertical numbered spine with a hairline connector. --- */
+    #step-rail {
+      position: relative;
+      flex: 0 0 auto;
+      order: 2;
+      width: 64px;
+      margin: 0;
+      padding: var(--space-2) 0;
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    #step-rail::before {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 30px;
+      bottom: 30px;
+      width: 2px;
+      transform: translateX(-50%);
+      background: var(--color-border);
+    }
+    .rail__item {
+      position: relative;
+      display: flex;
+    }
+    .rail__btn {
+      flex: 1 1 auto;
+      min-width: 44px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: var(--space-1);
+      margin: 0;
+      padding: var(--space-1) 0;
+      border: 0;
+      background: none;
+      font: inherit;
+      color: inherit;
+      text-align: center;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .rail__btn:disabled { cursor: default; }
+    .rail__marker {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border: 1.5px solid var(--color-border);
+      border-radius: 50%;
+      background: var(--color-paper);
+      font-family: var(--font-mono);
+      font-size: var(--text-sm);
+      font-weight: 700;
+      color: var(--color-ink-secondary);
+      transition: background var(--dur-base) var(--ease-standard),
+                  border-color var(--dur-base) var(--ease-standard),
+                  color var(--dur-base) var(--ease-standard),
+                  box-shadow var(--dur-base) var(--ease-standard),
+                  transform var(--dur-fast) var(--ease-standard);
+    }
+    .rail__label {
+      font-size: var(--text-xs);
+      line-height: 1.2;
+      color: var(--color-ink-secondary);
+      max-width: 60px;
+    }
+    .rail__item.is-upcoming .rail__marker { opacity: 0.5; }
+    .rail__item.is-upcoming .rail__label  { opacity: 0.5; }
+    .rail__item.is-current .rail__marker {
+      background: var(--color-accent);
+      border-color: var(--color-accent);
+      color: var(--color-paper);
+      box-shadow: 0 0 0 4px var(--color-accent-soft);
+    }
+    .rail__item.is-current .rail__label { color: var(--color-ink); font-weight: 700; }
+    .rail__item.is-complete .rail__marker {
+      background: var(--color-success);
+      border-color: var(--color-success);
+      color: var(--color-paper);
+    }
+    .rail__item.is-complete .rail__label { color: var(--color-ink-secondary); }
+    .rail__btn:active:not(:disabled) .rail__marker { transform: scale(0.94); }
+    .rail__btn:focus-visible { outline: none; }
+    .rail__btn:focus-visible .rail__marker { box-shadow: var(--ring-focus); }
+
+    /* --- Per-step action panels (progressive disclosure) --- */
+    .step-panel {
+      margin-top: var(--space-4);
+      padding-top: var(--space-4);
+      border-top: 1px solid var(--color-border);
+    }
+    .panel__label {
+      margin: 0 0 var(--space-2);
+      font-size: var(--text-sm);
+      font-weight: 700;
+    }
+    .mode-picker { display: flex; gap: var(--space-2); }
+    .mode-btn { flex: 1 1 0; min-width: 44px; }
+    .mode-btn[aria-pressed="true"] {
+      background: var(--color-accent-soft);
+      border-color: var(--color-accent);
+      box-shadow: inset 0 0 0 1px var(--color-accent);
+    }
+    .action-row { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: var(--space-3); }
+    .done-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-2);
+      color: var(--color-success);
+      font-size: var(--text-sm);
+      font-weight: 700;
+    }
+
+    /* --- Card navigation (Back / Next) --- */
+    .card__nav {
+      margin-top: auto;
+      padding-top: var(--space-4);
+      display: flex;
+      justify-content: space-between;
+      gap: var(--space-3);
+    }
+    .card__nav #btn-next { margin-left: auto; }
+    .btn:disabled { opacity: 0.55; cursor: default; }
+
+    :where(button, [tabindex]):focus-visible {
+      outline: none;
+      box-shadow: var(--ring-focus);
+    }
+
+    /* ============================================================
+       Controls (projector tilt / object rotation) — the native
+       Module-2 control primitives (.dock__group / .field), reused
+       inside the step card. Each field is revealed INDEPENDENTLY by
+       uiManager.js (Step 5 shows tilt only, Step 6 shows rotation
+       only), so #controls itself is only hidden when NEITHER is on
+       stage.
+       ============================================================ */
+    #controls { margin-top: var(--space-5); }
+    .dock__group { display: flex; flex-direction: column; gap: var(--space-3); }
+    .dock__group-title {
+      margin: 0 0 var(--space-1);
+      padding-bottom: var(--space-2);
+      font-size: var(--text-xs);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--color-ink-secondary);
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    /* --- Slider + numeric field (Module 2 dock pattern) --- */
+    .field { display: flex; flex-direction: column; gap: var(--space-1); }
+    .field__label {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: var(--space-2);
+      font-size: var(--text-sm);
+    }
+    .field__name { color: var(--color-ink); }
+    .field__row {
+      display: flex;
+      align-items: center;
+      gap: var(--space-3);
+      min-height: 44px;
+    }
+    .field__range {
+      flex: 1 1 auto;
+      min-width: 0;
+      height: 44px;
+      margin: 0;
+      background: transparent;
+      cursor: pointer;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+    .field__range::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: var(--color-track); }
+    .field__range::-moz-range-track { height: 4px; border-radius: 2px; background: var(--color-track); }
+    .field__range::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--color-accent); }
+    .field__range::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      margin-top: -6px;
+      border-radius: 50%;
+      background: var(--color-accent);
+      border: 2px solid var(--color-paper);
+      box-shadow: 0 0 0 1px var(--color-border);
+      transition: box-shadow var(--dur-fast) var(--ease-standard),
+                  background var(--dur-fast) var(--ease-standard);
+    }
+    .field__range::-moz-range-thumb {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--color-accent);
+      border: 2px solid var(--color-paper);
+      box-shadow: 0 0 0 1px var(--color-border);
+      transition: box-shadow var(--dur-fast) var(--ease-standard),
+                  background var(--dur-fast) var(--ease-standard);
+    }
+    .field__range:focus-visible { outline: none; }
+    .field__range:focus-visible::-webkit-slider-thumb,
+    .field__range:active::-webkit-slider-thumb {
+      background: var(--color-accent-strong);
+      box-shadow: 0 0 0 1px var(--color-accent), var(--ring-focus);
+    }
+    .field__range:focus-visible::-moz-range-thumb,
+    .field__range:active::-moz-range-thumb {
+      background: var(--color-accent-strong);
+      box-shadow: 0 0 0 1px var(--color-accent), var(--ring-focus);
+    }
+    .field__range:disabled { cursor: not-allowed; }
+    .field__range:disabled::-webkit-slider-thumb { background: var(--color-bench-grey); }
+    .field__range:disabled::-moz-range-thumb     { background: var(--color-bench-grey); }
+    .field__num {
+      flex: 0 0 auto;
+      width: 4.5rem;
+      padding: var(--space-2);
+      text-align: right;
+      font-family: var(--font-mono);
+      font-size: var(--text-sm);
+      font-variant-numeric: tabular-nums;
+      color: var(--color-ink);
+      background: var(--color-paper);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-xs);
+      transition: border-color var(--dur-fast) var(--ease-standard),
+                  box-shadow var(--dur-fast) var(--ease-standard);
+    }
+    .field__num:focus {
+      outline: none;
+      border-color: var(--color-accent);
+      box-shadow: var(--ring-focus);
+    }
+    .field__unit {
+      flex: 0 0 auto;
+      width: 2ch;
+      font-family: var(--font-mono);
+      font-size: var(--text-sm);
+      color: var(--color-ink-secondary);
+    }
+    input:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    /* ============================================================
+       Mobile advisory — banner only, never blocks the sim (§2.13)
+       ============================================================ */
+    #mobile-notice {
+      position: fixed;
+      left: var(--space-4);
+      right: var(--space-4);
+      bottom: var(--space-4);
+      z-index: var(--z-notice);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-4);
+      padding: var(--space-3) var(--space-4);
+      background: var(--color-host-white);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-md);
+    }
+    #mobile-notice .notice__text { margin: 0; font-size: var(--text-sm); }
+    .notice__dismiss {
+      flex: 0 0 auto;
+      min-height: 40px;
+      padding: var(--space-2) var(--space-3);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-sm);
+      background: var(--color-paper);
+      cursor: pointer;
+    }
+
+    /* ============================================================
+       WebGL context-loss chip + boot/runtime fallback
+       ============================================================ */
+    .sim-restoring {
+      position: fixed;
+      top: var(--space-4);
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 150;
+      padding: var(--space-2) var(--space-4);
+      background: var(--color-host-white);
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-md);
+      font-size: var(--text-sm);
+    }
+
+    .sim-toast {
+      position: fixed;
+      left: 50%;
+      top: var(--space-5);
+      transform: translateX(-50%);
+      z-index: 130;
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
+      padding: var(--space-3) var(--space-4);
+      font-size: var(--text-sm);
+      color: var(--color-ink);
+      background: var(--color-success-soft);
+      border: 1px solid var(--color-success);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-md);
+      opacity: 0;
+      transition: opacity var(--dur-base) var(--ease-standard);
+    }
+    .sim-toast.is-visible { opacity: 1; }
+    .sim-toast[hidden] { display: none; }
+    .sim-toast__icon { flex: none; width: 20px; height: 20px; color: var(--color-success); }
+    .sim-fallback {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: var(--space-6);
+      background: var(--color-paper);
+    }
+    .sim-fallback__inner { max-width: 30rem; text-align: center; }
+    .sim-fallback__icon { width: 48px; height: 48px; color: var(--color-bench-grey); margin-bottom: var(--space-4); }
+    .sim-fallback__title { font-size: var(--text-title); margin: 0 0 var(--space-3); }
+    .sim-fallback__body { color: var(--color-ink-secondary); line-height: 1.5; margin: 0 0 var(--space-5); }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: var(--space-2);
+      min-height: 44px;
+      padding: var(--space-3) var(--space-4);
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--color-border);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      font-size: var(--text-base);
+      font-weight: 400;
+      cursor: pointer;
+      transition: border-color var(--dur-fast) var(--ease-standard),
+                  background var(--dur-fast) var(--ease-standard),
+                  transform var(--dur-fast) var(--ease-standard);
+    }
+    .btn:active:not(:disabled) { transform: scale(0.97); }
+    .btn--primary {
+      background: var(--color-accent);
+      border-color: var(--color-accent);
+      color: var(--color-host-white);
+    }
+    .btn--primary:hover:not(:disabled) { background: var(--color-accent-strong); border-color: var(--color-accent-strong); }
+
+    /* ============================================================
+       Reduced motion — collapse animation to instant (§4.13)
+       ============================================================ */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.001ms !important;
+        transition-duration: 0.001ms !important;
+      }
+    }
+
+    /* Narrow screens: shrink the wizard, stack the card above the rail, and reflow
+       the vertical spine into a horizontal strip (family standard). */
+    @media (max-width: 767px) {
+      #wizard { width: 300px; }
+      .wizard-main { flex-direction: column; }
+      #step-card { order: 1; flex: 1 1 auto; min-height: 0; }
+      #step-rail {
+        order: 2;
+        flex: 0 0 auto;
+        flex-direction: row;
+        width: 100%;
+        padding: var(--space-3) 0 0;
+      }
+      #step-rail::before {
+        left: 30px;
+        right: 30px;
+        top: calc(var(--space-3) + 17px);
+        bottom: auto;
+        width: auto;
+        height: 2px;
+        transform: translateY(-50%);
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Boot/runtime failure fallback. -->
+  <div id="sim-fallback" class="sim-fallback" role="alert" hidden>
+    <div class="sim-fallback__inner">
+      <svg class="sim-fallback__icon" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M24 8 40 17 24 26 8 17Z" />
+        <path d="M40 17V31L24 40 8 31V17" />
+        <path d="M8.5 8.5 39.5 39.5" />
+      </svg>
+      <h1 class="sim-fallback__title" id="sim-fallback-title">We could not load the simulation</h1>
+      <p class="sim-fallback__body" id="sim-fallback-body">It looks like the connection dropped while the 3D tools were starting up. Check your internet connection, then reload to try again.</p>
+      <button type="button" class="btn btn--primary" id="sim-fallback-reload">Reload the simulation</button>
+    </div>
+  </div>
+
+  <!-- Transient WebGL context-loss recovery chip. -->
+  <div id="sim-context-lost" class="sim-restoring" role="status" hidden>
+    <span>Restoring the 3D view&hellip;</span>
+  </div>
+
+  <!-- Success toast — the "lesson complete" win. -->
+  <div id="sim-toast" class="sim-toast" aria-hidden="true" hidden>
+    <svg class="sim-toast__icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M4 10.5 8.5 15 16 5.5" />
+    </svg>
+    <span class="sim-toast__text"></span>
+  </div>
+
+  <!-- Mobile advisory. -->
+  <aside id="mobile-notice" role="status" hidden>
+    <p class="notice__text">Best experienced on desktop.</p>
+    <button id="mobile-notice-dismiss" class="notice__dismiss" type="button">Dismiss</button>
+  </aside>
+
+  <!-- ============================================================
+       Viewport — the wedge / plane / projectors scene (main.js
+       orchestrates the geometry leaves; src/labelLayer.js owns the
+       CSS2D names)
+       ============================================================ -->
+  <main id="sim-viewport" aria-label="Engineering graphics viewport.">
+    <p class="vp-hint">Drag to orbit · scroll to zoom</p>
+  </main>
+
+  <!-- ============================================================
+       Wizard — guided-step rail + card. stepper.js drives everything
+       here: copy renders from orthoSteps.js, panels reveal per step,
+       Next gates on completion.
+       ============================================================ -->
+  <aside id="wizard" aria-label="Guided steps">
+    <div class="wizard-main">
+    <ol id="step-rail" aria-label="Lesson steps">
+      <li class="rail__item" data-step="1"><button type="button" class="rail__btn"><span class="rail__marker" aria-hidden="true">1</span><span class="rail__label">The Observer</span></button></li>
+      <li class="rail__item" data-step="2"><button type="button" class="rail__btn"><span class="rail__marker" aria-hidden="true">2</span><span class="rail__label">The Object</span></button></li>
+      <li class="rail__item" data-step="3"><button type="button" class="rail__btn"><span class="rail__marker" aria-hidden="true">3</span><span class="rail__label">The Plane</span></button></li>
+      <li class="rail__item" data-step="4"><button type="button" class="rail__btn"><span class="rail__marker" aria-hidden="true">4</span><span class="rail__label">Parallel Projectors</span></button></li>
+      <li class="rail__item" data-step="5"><button type="button" class="rail__btn"><span class="rail__marker" aria-hidden="true">5</span><span class="rail__label">Perpendicular</span></button></li>
+      <li class="rail__item" data-step="6"><button type="button" class="rail__btn"><span class="rail__marker" aria-hidden="true">6</span><span class="rail__label">Formation of the View</span></button></li>
+      <li class="rail__item" data-step="7"><button type="button" class="rail__btn"><span class="rail__marker" aria-hidden="true">7</span><span class="rail__label">Why It Matters</span></button></li>
+    </ol>
+
+    <section id="step-card">
+      <p class="card__eyebrow">Step <span id="step-current">1</span> of <span id="step-total">7</span></p>
+      <h2 class="card__title" id="step-title"></h2>
+      <p class="card__lead" id="step-lead"></p>
+      <div class="card__body" id="step-body"></div>
+      <p class="card__hint" id="step-hint" hidden></p>
+
+      <!-- Step 4 — the parallel/perspective compare toggle. -->
+      <div class="step-panel" data-step="4" hidden>
+        <p class="panel__label" id="ray-label">Compare the projector bundle</p>
+        <div class="mode-picker" role="group" aria-labelledby="ray-label">
+          <button type="button" class="btn mode-btn" id="btn-ray-parallel" aria-pressed="true">Parallel</button>
+          <button type="button" class="btn mode-btn" id="btn-ray-perspective" aria-pressed="false">Perspective (photo)</button>
+        </div>
+      </div>
+
+      <!-- Step 6 — the dissolve toggle. Reversible; using it once unlocks Next. -->
+      <div class="step-panel" data-step="6" hidden>
+        <div class="action-row">
+          <button type="button" class="btn btn--primary" id="btn-dissolve">Reveal the flat view</button>
+          <span class="done-badge" id="done-dissolve" hidden>✓ Saw the flat view form</span>
+        </div>
+      </div>
+
+      <!-- ============================================================
+           Projector-tilt (Step 5) / object-rotation (Step 6) controls —
+           native Module-2 control primitives (.dock__group / .field).
+           Each field is revealed INDEPENDENTLY by uiManager.js; never
+           both on stage at once. ================================ -->
+      <div id="controls" hidden>
+        <div class="dock__group" role="group" aria-labelledby="controls-title">
+          <h3 class="dock__group-title" id="controls-title">Controls</h3>
+
+          <div class="field" id="field-tilt" hidden>
+            <label class="field__label" for="rng-tilt"><span class="field__name">Projector angle</span></label>
+            <div class="field__row">
+              <input class="field__range" type="range" id="rng-tilt" min="60" max="90" step="1" />
+              <input class="field__num" type="text" id="num-tilt" inputmode="decimal" autocomplete="off" spellcheck="false" aria-label="Projector angle off the plane, in degrees" />
+              <span class="field__unit" aria-hidden="true">°</span>
+            </div>
+          </div>
+
+          <div class="field" id="field-rotation" hidden>
+            <label class="field__label" for="rng-rotation"><span class="field__name">Rotate the object</span></label>
+            <div class="field__row">
+              <input class="field__range" type="range" id="rng-rotation" min="0" max="360" step="1" />
+              <input class="field__num" type="text" id="num-rotation" inputmode="decimal" autocomplete="off" spellcheck="false" aria-label="Object rotation about the vertical axis, in degrees" />
+              <span class="field__unit" aria-hidden="true">°</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card__nav">
+        <button type="button" class="btn" id="btn-back" hidden>Back</button>
+        <button type="button" class="btn btn--primary" id="btn-next">Next</button>
+      </div>
+    </section>
+    </div>
+  </aside>
+
+  <!-- Inline term-definition popover (DESIGN.md §5.7). -->
+  <div id="term-pop" role="tooltip"></div>
+
+  <!-- Live region for state narration (screen readers). -->
+  <div id="sim-status" class="sr-only" role="status" aria-live="polite"></div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
