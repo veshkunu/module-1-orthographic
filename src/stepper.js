@@ -24,7 +24,7 @@ const TOTAL = STEPS.length;
  *   getData: () => { rotationY: number, projectorTilt: number, rayMode: string },
  *   getView: () => object,
  *   commit: (patch: object) => void,
- *   applyView: (view: object) => void,
+ *   applyView: (view: object, cameraPose?: object) => void,
  *   setFlatOnly: (on: boolean) => void,
  *   isFlatOnly: () => boolean,
  *   hasDissolved: () => boolean,
@@ -139,7 +139,7 @@ export function initStepper(sim) {
       panel.hidden = Number(panel.dataset.step) !== currentStep;
     }
 
-    sim.applyView(meta.view);
+    sim.applyView(meta.view, meta.camera);
 
     if (card) card.scrollTop = 0;
 

@@ -6,8 +6,7 @@
 // and the 3D lesson content on Module 2's orchestrator pattern (ADR-007,
 // ADR-033): the one fixed wedge (wedgeBlock.js), the single projection plane
 // (projectionPlane.js), the projector ray bundle (projectors.js), the formed
-// 2D view (viewDrawing.js), Step 1's camera-following observer illustration
-// (observerRig.js), and the CSS2D label layer (labelLayer.js).
+// 2D view (viewDrawing.js), and the CSS2D label layer (labelLayer.js).
 //
 // Scope (deliberate — do not expand): ONE object, ONE plane, no quadrants, no
 // first/third-angle, no coordinated multi-view layout, no textbook problem
@@ -26,7 +25,6 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js';
 import { defaultOrthoData, RayMode } from './orthoData.js';
 import { DEFAULT_VIEW } from './orthoSteps.js';
-import { VERTEX_ORDER, worldVertices } from './wedgeGeometry.js';
 import { initStepper } from './stepper.js';
 import { initTerms } from './terms.js';
 import { initUIManager } from './uiManager.js';
@@ -34,9 +32,8 @@ import { createWedgeBlock } from './wedgeBlock.js';
 import { createProjectionPlane } from './projectionPlane.js';
 import { createProjectors } from './projectors.js';
 import { createViewDrawing } from './viewDrawing.js';
-import { createObserverRig } from './observerRig.js';
 import { createLabelLayer } from './labelLayer.js';
-import { tween, tick as tickTweens, cancelAll as cancelTweens, easeDissolve, easeDraw } from './anim.js';
+import { tween, tick as tickTweens, cancelAll as cancelTweens, easeDissolve, easeDraw, easeCamera } from './anim.js';
 
 const rootStyle = getComputedStyle(document.documentElement);
 const cssColor = (name) => new THREE.Color(rootStyle.getPropertyValue(name).trim());
@@ -45,9 +42,11 @@ const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)
 
 /** A 3/4 vantage that keeps both the wedge (z ≈ 2.6) and the plane (z = 0) in
  *  frame, with enough depth between them that the projector bundle reads
- *  clearly. This is the ONLY camera pose this topic needs — no quadrant walk,
- *  no square-on quick-view (those belong to the Spatial Framework topic). */
-const DEFAULT_CAMERA_POSITION = new THREE.Vector3(6.2, 3.4, 8.6);
+ *  clearly. Viewed from the LEFT (negative X) so the object sits toward the
+ *  left and the plane extends to the right — a mirror of the earlier
+ *  right-tilted default. No quadrant walk, no square-on quick-view (those
+ *  belong to the Spatial Framework topic). */
+const DEFAULT_CAMERA_POSITION = new THREE.Vector3(-6.2, 3.4, 8.6);
 const DEFAULT_CAMERA_TARGET = new THREE.Vector3(0, 0.9, 1.2);
 
 /** The Step 6 dissolve: how long the wedge takes to fade away, on the named
@@ -58,6 +57,10 @@ const DISSOLVE_MS = 900;
 /** Ordinary step-transition fade-in duration (matches the sibling topics'
  *  fadeInLeaf timing). */
 const FADE_MS = 560;
+
+/** How long a step's opening camera pose takes to glide into place (Step 4's
+ *  oblique reveal). Collapses to instant under reduced motion (anim.js). */
+const CAMERA_MOVE_MS = 900;
 
 // ============================================================================
 // Module state
@@ -86,7 +89,6 @@ let wedge = null;
 let plane = null;
 let projectors = null;
 let viewDrawing = null;
-let observer = null;
 let labelLayer = null;
 
 /** Whether the wedge is currently dissolved away (Step 6's "reveal the flat
@@ -95,6 +97,8 @@ let labelLayer = null;
 let flatOnly = false;
 let dissolvedOnce = false;
 let dissolveTween = null;
+/** In-flight camera-move tween (a step's opening pose), or null. */
+let cameraTween = null;
 /** Live 0(shown)→1(hidden) wedge-dissolve level, re-stamped onto a freshly
  *  rebuilt wedge leaf so a rebuild mid-toggle (e.g. a rotation drag while
  *  dissolved) keeps the wedge hidden instead of popping back to full. */
@@ -108,7 +112,6 @@ const fadeState = {
   plane: { k: 1, tween: null, leaf: () => plane },
   projectors: { k: 1, tween: null, leaf: () => projectors },
   viewDrawing: { k: 1, tween: null, leaf: () => viewDrawing },
-  observer: { k: 1, tween: null, leaf: () => observer },
 };
 
 /** The last view actually applied, for detecting what just turned on so only
@@ -212,7 +215,6 @@ function disposeContent() {
   plane?.dispose(); plane = null;
   projectors?.dispose(); projectors = null;
   viewDrawing?.dispose(); viewDrawing = null;
-  observer?.dispose(); observer = null;
   labelLayer?.dispose(); labelLayer = null;
   contentGroup.clear();
 }
@@ -258,15 +260,10 @@ function rebuild() {
     contentGroup.add(viewDrawing.group);
   }
 
-  if (currentView.showObserver) {
-    const verts = worldVertices(currentData.rotationY);
-    const targets = ['A', 'C', 'F'].map((id) => verts[id]);
-    observer = createObserverRig({ targets, width, height });
-    contentGroup.add(observer.group);
-  }
-
   labelLayer = createLabelLayer({ width, height });
-  labelLayer.generate({ view: currentView, rotationY: currentData.rotationY, tiltDeg: currentData.projectorTilt });
+  labelLayer.generate({
+    view: currentView, rotationY: currentData.rotationY, tiltDeg: currentData.projectorTilt,
+  });
   contentGroup.add(labelLayer.group);
 
   // Re-stamp in-progress fades (step transitions + the dissolve) onto the
@@ -304,8 +301,10 @@ const simController = {
    *  Step 4 resets rayMode to PARALLEL so re-entering it always starts from
    *  the correct default, and any Step-6 dissolve resets on any step change
    *  other than a re-visit of Step 6 itself, so the wedge is always visible
-   *  when a new step's illustration first appears. */
-  applyView(stepView) {
+   *  when a new step's illustration first appears. `cameraPose` is optional:
+   *  a step may declare an opening camera pose (orthoSteps.js) that we snap to
+   *  on entry — steps without one leave the camera exactly where it is. */
+  applyView(stepView, cameraPose) {
     const prevView = prevAppliedView;
     currentView = { ...DEFAULT_VIEW, ...stepView };
 
@@ -330,7 +329,12 @@ const simController = {
     if (turnedOn('showWedge')) fadeInLeaf('wedge');
     if (turnedOn('showProjectors')) fadeInLeaf('projectors');
     if (turnedOn('showView')) fadeInLeaf('viewDrawing');
-    if (turnedOn('showObserver')) fadeInLeaf('observer');
+
+    // A step may declare its own opening camera pose (data-driven, in
+    // orthoSteps.js). We glide to it on step entry (e.g. Step 3 → Step 4's
+    // oblique reveal); orbit controls stay fully live, so the learner can move
+    // freely once the move settles.
+    if (cameraPose) setCameraPose(cameraPose, { animate: true });
 
     prevAppliedView = currentView;
     ui?.sync();
@@ -363,7 +367,6 @@ function applyFadeLevels() {
   fadeState.plane.leaf()?.setOpacity(fadeState.plane.k);
   fadeState.projectors.leaf()?.setOpacity(fadeState.projectors.k);
   fadeState.viewDrawing.leaf()?.setOpacity(fadeState.viewDrawing.k);
-  fadeState.observer.leaf()?.setOpacity(fadeState.observer.k);
   // wedge is handled in rebuild() itself (it composes with the dissolve level).
 }
 
@@ -384,9 +387,40 @@ function fadeInLeaf(name, duration = FADE_MS, ease = easeDraw) {
 }
 
 function resetCamera() {
+  cameraTween?.cancel(); cameraTween = null;
   camera.position.copy(DEFAULT_CAMERA_POSITION);
   controls.target.copy(DEFAULT_CAMERA_TARGET);
   controls.update();
+}
+
+/** Move the camera to a step's declared opening pose. `animate` glides there on
+ *  the easeCamera curve over CAMERA_MOVE_MS (Step 4's oblique reveal); under
+ *  reduced motion the tween lands instantly (anim.js). Every frame hard-sets
+ *  position + target and calls controls.update(), so OrbitControls damping can
+ *  never fight the move — and controls stay fully live once it completes. */
+function setCameraPose({ position, target } = {}, { animate = false } = {}) {
+  cameraTween?.cancel(); cameraTween = null;
+  const startPos = camera.position.clone();
+  const startTgt = controls.target.clone();
+  const endPos = position ? new THREE.Vector3(position.x, position.y, position.z) : startPos.clone();
+  const endTgt = target ? new THREE.Vector3(target.x, target.y, target.z) : startTgt.clone();
+
+  if (!animate) {
+    camera.position.copy(endPos);
+    controls.target.copy(endTgt);
+    controls.update();
+    return;
+  }
+
+  cameraTween = tween({
+    from: 0, to: 1, duration: CAMERA_MOVE_MS, ease: easeCamera,
+    onUpdate: (k) => {
+      camera.position.lerpVectors(startPos, endPos, k);
+      controls.target.lerpVectors(startTgt, endTgt, k);
+      controls.update();
+    },
+    onComplete: () => { cameraTween = null; },
+  });
 }
 
 // ============================================================================
@@ -400,7 +434,6 @@ function animate(now) {
 
   tickTweens(delta);
   controls.update();
-  observer?.updateFromCamera(camera); // Step 1's sight-lines track the live camera
   renderer.render(scene, camera);
   labelRenderer.render(scene, camera);
 }
@@ -438,7 +471,6 @@ function handleResize(container) {
   plane?.setResolution(w, h);
   projectors?.setResolution(w, h);
   viewDrawing?.setResolution(w, h);
-  observer?.setResolution(w, h);
   labelLayer?.setResolution(w, h);
 }
 

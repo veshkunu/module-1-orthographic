@@ -85,11 +85,15 @@ structure (ADR-011). Concretely for this topic:
   one object, so there is no `iShape.js`-style generator contract to satisfy),
   `projectionPlane.js` (the single generic projection plane), `projectors.js`
   (the parallel/perspective ray bundle + the perpendicular-vs-oblique tilt),
-  `viewDrawing.js` (the formed 2D outline), `observerRig.js` (Step 1's
-  camera-following sight-lines), `labelLayer.js` (CSS2D callouts), plus the
-  chrome leaves `stepper.js`, `terms.js`, `uiManager.js`. Every geometry leaf
-  exposes `{ group, setOpacity, setResolution, dispose }` (some add their own
-  extras: `observerRig.js` adds `updateFromCamera()`).
+  `viewDrawing.js` (the formed 2D outline), `observerRig.js` (Step 1's fixed
+  third-person eye marker + sight-lines), `labelLayer.js` (CSS2D callouts),
+  plus the chrome leaves `stepper.js`, `terms.js`, `uiManager.js`. Every
+  geometry leaf exposes `{ group, setOpacity, setResolution, dispose }`.
+  `observerRig.js`'s eye is deliberately a FIXED point, not the live camera —
+  a ray from a viewer's own eye to anywhere is radial and has zero apparent
+  length in that viewer's own render, so anchoring the marker to the camera
+  that renders it would make it invisible (caught in headless screenshot
+  verification, 2026-07-09; do not "simplify" this back to camera-tracking).
 - **No solid machinery beyond a fixed mesh.** Because the wedge is one
   hand-authored shape (not a parametric family), this topic has no
   `meshAnalyzer.js`, no `projectionDrawer.js`, and no hidden/visible edge

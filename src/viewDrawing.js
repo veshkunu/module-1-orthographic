@@ -28,7 +28,9 @@ const rootStyle = getComputedStyle(document.documentElement);
 const cssColor = (name) => new THREE.Color(rootStyle.getPropertyValue(name).trim());
 
 const LW_VIEW = 2.4;
-const DOT_RADIUS = 0.09;
+// Precise engineering-drawing points, not large UI markers (~45% smaller than
+// the original 0.09; the halo still scales at ×1.6).
+const DOT_RADIUS = 0.05;
 
 /** A thick filled dot at one landing point (ADR-016), lifted off the plane by
  *  a hair so it never z-fights the sheet fill. */

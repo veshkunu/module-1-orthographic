@@ -26,10 +26,6 @@
 
 /** Term glossary. Keys match data-t="…" on term buttons. */
 export const TERMS = Object.freeze({
-  observer: {
-    label: 'observer',
-    def: 'Observer — the person (or camera) looking at the object. In an ordinary photograph the observer’s eye is the single point every light ray converges on.',
-  },
   object: {
     label: 'object',
     def: 'The object — the real 3D thing being drawn. Every one of its corners is what gets projected onto the plane.',
@@ -73,7 +69,6 @@ export const TERMS = Object.freeze({
  *  read the merged result inside rebuild(). */
 export const DEFAULT_VIEW = Object.freeze({
   showWedge: false,      // the object itself
-  showObserver: false,   // Step 1: eye glyph + camera-following sight-lines
   showLabels: false,     // vertex letters A–F
   showPlane: false,      // the single projection plane
   showProjectors: false, // the projector ray bundle
@@ -89,19 +84,6 @@ export const DEFAULT_VIEW = Object.freeze({
 /** The guided sequence, in order — the 7-step introduction to orthographic projection. */
 export const STEPS = Object.freeze([
   {
-    id: 'observer',
-    title: 'The Observer',
-    lead: 'Every drawing begins with someone looking at something.',
-    body: [
-      'The solid floating here is what you are about to learn to draw. Right now you are looking at it the ordinary way: as an <button type="button" class="term" data-t="observer">observer</button>, with your eye acting like a camera. Notice the faint lines running from your own viewpoint to a few of its corners — those are sight lines, and they all meet at one point: you.',
-      'Orbit around the solid. However you move, the sight lines keep converging on your eye. Keep that picture in mind — it is exactly what a later step will contrast against.',
-    ],
-    hint: 'A photograph works the same way: every ray of light that reaches the camera lens passes through one single point.',
-    controls: [],
-    view: { showWedge: true, showObserver: true },
-    orbitHint: true,
-  },
-  {
     id: 'object',
     title: 'The Object',
     lead: 'Meet the solid you will be projecting.',
@@ -112,6 +94,7 @@ export const STEPS = Object.freeze([
     hint: 'Corners A, B, C sit on one triangular end; D, E, F sit directly opposite on the other end.',
     controls: [],
     view: { showWedge: true, showLabels: true },
+    orbitHint: true,
   },
   {
     id: 'plane',
@@ -131,11 +114,22 @@ export const STEPS = Object.freeze([
     lead: 'Cast a straight line from every corner to the plane — all pointing the same way.',
     body: [
       'Each thin line you now see is a <button type="button" class="term" data-t="projector">projector</button>: a straight path from one corner of the object to its landing point on the plane. Every projector here runs in exactly the same direction — this is called <button type="button" class="term" data-t="parallel">parallel projection</button>.',
-      'Try the switch below. It swaps the parallel bundle for a <button type="button" class="term" data-t="perspective">perspective</button> bundle — the way a camera actually sees, with every ray converging on one eye point, just like Step 1. Watch how the landing points shift: perspective rays make near corners land farther apart than far corners. Parallel rays never do that — the object could sit right against the plane or a mile away, and its landing points would not change size at all.',
+      'Try the switch below. It swaps the parallel bundle for a <button type="button" class="term" data-t="perspective">perspective</button> bundle — the way a camera actually sees, with every ray converging on one single eye point. Watch how the landing points shift: perspective rays make near corners land farther apart than far corners. Parallel rays never do that — the object could sit right against the plane or a mile away, and its landing points would not change size at all.',
     ],
     hint: 'This is the whole reason engineers use parallel projectors: the resulting drawing does not care how far away the object is.',
     controls: ['rayMode'],
     view: { showWedge: true, showLabels: true, showPlane: true, showProjectors: true, rayModeControl: true },
+    // Opening camera pose for this step only: an oblique 3/4 (~43° horizontal,
+    // ~17° down, medium zoom) that reads the object, the plane, and the full
+    // projector bundle as one spatial relationship with clear depth between
+    // the object (z ≈ 2.6) and the plane (z = 0). Viewed from the LEFT, to
+    // match the mirrored default orientation (object left, plane right).
+    // main.js glides to this on entry (easeCamera, ~0.9s); OrbitControls stay
+    // live so the learner can still move. Tuned by eye — adjust here if needed.
+    camera: {
+      position: { x: -7.3, y: 4.3, z: 9.3 },
+      target: { x: 0.2, y: 0.9, z: 1.3 },
+    },
   },
   {
     id: 'perpendicular',

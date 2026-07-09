@@ -2,7 +2,7 @@
 // DOM label that names things in the viewport — the wedge's six lettered
 // corners (A–F), the "Projection Plane" callout, "The View" callout on the
 // formed outline, and a live "∠ …°" readout at the plane showing the current
-// projector angle (Step 5's perpendicular-vs-oblique payoff, doubling as the
+// projector angle (Step 4's perpendicular-vs-oblique payoff, doubling as the
 // platform's "show real values, not vibes" numeric readout, PRODUCT.md §4.4).
 //
 // WHY CSS2D (RULES.md §3.27): a CSS2DObject is a real DOM node positioned at a
@@ -26,8 +26,8 @@ import { getLandingPoints } from './projectors.js';
 import { RayMode } from './orthoData.js';
 
 // ── Fixed viewport anchors (world units — hand-placed against the plane's
-//    known 9×9 sheet centred at y = 0.9, matching projectionPlane.js). ──
-const PLANE_LABEL_ANCHOR = [-3.6, 4.15, 0.05];
+//    known 7.5×7.5 sheet centred at y = 0.9, matching projectionPlane.js). ──
+const PLANE_LABEL_ANCHOR = [-3.0, 3.9, 0.05];
 
 /** Outward nudge for each vertex letter, so the chip sits just clear of the
  *  solid's own edges rather than sitting on top of the corner. */
@@ -75,7 +75,7 @@ export function createLabelLayer({ width = 1, height = 1 } = {}) {
     generate({ view = {}, rotationY = 0, tiltDeg = 90 } = {}) {
       this.clear();
 
-      // ── Vertex letters (Step 2+).
+      // ── Vertex letters (Step 1+).
       if (view.showLabels) {
         const verts = worldVertices(rotationY);
         for (const id of VERTEX_ORDER) {

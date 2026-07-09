@@ -30,14 +30,19 @@ const rootStyle = getComputedStyle(document.documentElement);
 const cssColor = (name) => new THREE.Color(rootStyle.getPropertyValue(name).trim());
 const mixToward = (a, b, t) => a.clone().lerp(b, t);
 
-// ── Sheet + stroke constants (matches the sibling topics' hvPlanes.js scale) ──
-const SHEET = 9;
+// ── Sheet + stroke constants ──
+// Sheet trimmed from 9 to 7.5 (~17%) for a little breathing room around the
+// scene. GRID.divs drops 18 → 15 in lockstep so GRID_CELL stays exactly 0.5 —
+// the grid spacing is unchanged, there are just fewer cells on the smaller
+// sheet. Purely visual: the projection math treats the plane as the infinite
+// z = 0 plane, so landing points are unaffected.
+const SHEET = 7.5;
 const HALF = SHEET / 2;
 const CENTER_Y = 0.9; // frame the sheet around the wedge's own vertical center
 const LW_BORDER = 1.8;
 const FILL_OPACITY = 0.09;
-const GRID = { opacity: 0.5, fade: 0.6, divs: 18 };
-const GRID_CELL = SHEET / GRID.divs;
+const GRID = { opacity: 0.5, fade: 0.6, divs: 15 };
+const GRID_CELL = SHEET / GRID.divs; // = 0.5, identical to the old 9 / 18
 
 /** The plane-hued cage grid (see hvPlanes.js's calmGrid — same treatment,
  *  single plane so no HP/VP map() indirection is needed). */

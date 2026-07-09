@@ -9,10 +9,10 @@
   <meta name="description" content="Discover orthographic projection itself: watch a solid cast its shadow onto a single projection plane, compare parallel projectors against a perspective photo's converging rays, and see why the projectors must be perpendicular to give a true, measurable view." />
 
   <!--
-    See ../CLAUDE.md. The guided-step wizard (7-step rail + card, driven by
+    See ../CLAUDE.md. The guided-step wizard (6-step rail + card, driven by
     src/stepper.js from src/orthoSteps.js), the 3D content (wedgeBlock.js,
-    projectionPlane.js, projectors.js, viewDrawing.js, observerRig.js), and the
-    CSS2D label layer (src/labelLayer.js) are all wired through src/main.js.
+    projectionPlane.js, projectors.js, viewDrawing.js), and the CSS2D label
+    layer (src/labelLayer.js) are all wired through src/main.js.
     Platform contract: the import map, the boot watchdog, the bundled fonts,
     and the root DESIGN.md token set (ADR-033, ADR-007 orchestrator pattern).
 
@@ -813,24 +813,23 @@
   <aside id="wizard" aria-label="Guided steps">
     <div class="wizard-main">
     <ol id="step-rail" aria-label="Lesson steps">
-      <li class="rail__item" data-step="1"><button type="button" class="rail__btn"><span class="rail__marker" aria-hidden="true">1</span><span class="rail__label">The Observer</span></button></li>
-      <li class="rail__item" data-step="2"><button type="button" class="rail__btn"><span class="rail__marker" aria-hidden="true">2</span><span class="rail__label">The Object</span></button></li>
-      <li class="rail__item" data-step="3"><button type="button" class="rail__btn"><span class="rail__marker" aria-hidden="true">3</span><span class="rail__label">The Plane</span></button></li>
-      <li class="rail__item" data-step="4"><button type="button" class="rail__btn"><span class="rail__marker" aria-hidden="true">4</span><span class="rail__label">Parallel Projectors</span></button></li>
-      <li class="rail__item" data-step="5"><button type="button" class="rail__btn"><span class="rail__marker" aria-hidden="true">5</span><span class="rail__label">Perpendicular</span></button></li>
-      <li class="rail__item" data-step="6"><button type="button" class="rail__btn"><span class="rail__marker" aria-hidden="true">6</span><span class="rail__label">Formation of the View</span></button></li>
-      <li class="rail__item" data-step="7"><button type="button" class="rail__btn"><span class="rail__marker" aria-hidden="true">7</span><span class="rail__label">Why It Matters</span></button></li>
+      <li class="rail__item" data-step="1"><button type="button" class="rail__btn"><span class="rail__marker" aria-hidden="true">1</span><span class="rail__label">The Object</span></button></li>
+      <li class="rail__item" data-step="2"><button type="button" class="rail__btn"><span class="rail__marker" aria-hidden="true">2</span><span class="rail__label">The Plane</span></button></li>
+      <li class="rail__item" data-step="3"><button type="button" class="rail__btn"><span class="rail__marker" aria-hidden="true">3</span><span class="rail__label">Parallel Projectors</span></button></li>
+      <li class="rail__item" data-step="4"><button type="button" class="rail__btn"><span class="rail__marker" aria-hidden="true">4</span><span class="rail__label">Perpendicular</span></button></li>
+      <li class="rail__item" data-step="5"><button type="button" class="rail__btn"><span class="rail__marker" aria-hidden="true">5</span><span class="rail__label">Formation of the View</span></button></li>
+      <li class="rail__item" data-step="6"><button type="button" class="rail__btn"><span class="rail__marker" aria-hidden="true">6</span><span class="rail__label">Why It Matters</span></button></li>
     </ol>
 
     <section id="step-card">
-      <p class="card__eyebrow">Step <span id="step-current">1</span> of <span id="step-total">7</span></p>
+      <p class="card__eyebrow">Step <span id="step-current">1</span> of <span id="step-total">6</span></p>
       <h2 class="card__title" id="step-title"></h2>
       <p class="card__lead" id="step-lead"></p>
       <div class="card__body" id="step-body"></div>
       <p class="card__hint" id="step-hint" hidden></p>
 
-      <!-- Step 4 — the parallel/perspective compare toggle. -->
-      <div class="step-panel" data-step="4" hidden>
+      <!-- Step 3 — the parallel/perspective compare toggle. -->
+      <div class="step-panel" data-step="3" hidden>
         <p class="panel__label" id="ray-label">Compare the projector bundle</p>
         <div class="mode-picker" role="group" aria-labelledby="ray-label">
           <button type="button" class="btn mode-btn" id="btn-ray-parallel" aria-pressed="true">Parallel</button>
@@ -838,8 +837,8 @@
         </div>
       </div>
 
-      <!-- Step 6 — the dissolve toggle. Reversible; using it once unlocks Next. -->
-      <div class="step-panel" data-step="6" hidden>
+      <!-- Step 5 — the dissolve toggle. Reversible; using it once unlocks Next. -->
+      <div class="step-panel" data-step="5" hidden>
         <div class="action-row">
           <button type="button" class="btn btn--primary" id="btn-dissolve">Reveal the flat view</button>
           <span class="done-badge" id="done-dissolve" hidden>✓ Saw the flat view form</span>

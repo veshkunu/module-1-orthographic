@@ -36,9 +36,8 @@ const LW_PROJECTOR = 1.6;
 const DASH = { dashSize: 0.16, gapSize: 0.11 };
 
 /** Where the compare toggle's perspective rays converge — well beyond the
- *  wedge, standing in for "the observer's eye" (the same role Step 1's
- *  camera-following sight lines play, but fixed so the bundle reads clearly
- *  from any orbit angle). */
+ *  wedge, standing in for the eye of a camera looking at the object (fixed so
+ *  the converging bundle reads clearly from any orbit angle). */
 export const EYE_POINT = Object.freeze({ x: 0, y: 0.9, z: 9 });
 
 /**
